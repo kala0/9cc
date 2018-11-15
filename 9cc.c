@@ -89,7 +89,7 @@ int i = 0;
 			continue;
 		}
 		
-		if (*p == '+' || *p == '-' || *p == '*') {
+		if (*p == '+' || *p == '-' || *p == '*' || *p == '/') {
 			Tokens[i].ty = *p;
 			Tokens[i].input = p;
 			i++;
@@ -163,20 +163,18 @@ Node *mul()
 Node *lhs = term();
 
 
-	if (Tokens[Pos].ty == '+' || Tokens[Pos].ty == '-')			// add hara
-		return lhs;						// add hara
+	if (Tokens[Pos].ty == '+' || Tokens[Pos].ty == '-')		// add hara
+		return lhs;											// add hara
 	if (Tokens[Pos].ty == TK_EOF)
 		return lhs;
 	if (Tokens[Pos].ty == '*') {
 		Pos++;
 		return new_node('*', lhs, mul());
 	}
-/*
-	if (Tokens[pos].ty == '/') {
-		pos++;
+	if (Tokens[Pos].ty == '/') {
+		Pos++;
 		return new_node('/', lhs, mul());
 	}
-*/
 	error("(2)想定しないトークンです:", Tokens[Pos].input);
 }
 
@@ -220,6 +218,9 @@ void gen(Node *node)
 	case '*':
 		printf("	mul rdi\n");
 		break;
+	case '/':
+		printf("	mov rdx, 0\n");
+		printf("	div rdi\n");
 	}
 	printf("	push rax\n");
 }
