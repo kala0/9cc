@@ -12,6 +12,7 @@
 enum {
 	TK_NUM = 256,	// 整数トークン
 	TK_EOF,			// EOF
+	ND_NUM = 256,	// 整数のノードの型
 };
 
 
@@ -19,23 +20,36 @@ enum {
 
 // 構造体
 typedef struct {
-	int ty;			// トークンの型
-	int val;		// tyがTK_NUMの場合、その数値
-	char *input;	// トークン文字列（エラーメッセージ用）
+	int ty;				// トークンの型
+	int val;			// tyがTK_NUMの場合、その数値
+	char *input;		// トークン文字列（エラーメッセージ用）
 } Token;
 
+typedef struct Node {
+	int ty;				// 演算子かND_NUM
+	struct Node *lhs;	// 左辺
+	struct Node *rhs;	// 右辺
+	int val;			// tyがND_NUMの場合のみ使う
+} Node;
 
 
 
 // データ
 Token Tokens[100];
+int Pos = 0;
 
 
 
 
 // 関数
 void tokenize(char *p);
-void error(int i);
+void error(char *s,char *i);
+Node *new_node(int op, Node *lhs, Node *rhs);
+Node *new_node_num(int val);
+Node *expr();
+Node *mul();
+Node *term();
+void gen(Node *node);
 
 
 
@@ -48,35 +62,16 @@ int main(int argc, char **argv)
 	}
 	
 	tokenize(argv[1]);
+	Node *node = expr();
 	
 	printf(".intel_syntax noprefix\n");
 	printf(".global main\n");
 	printf("main: \n");
 	
-	if (Tokens[0].ty != TK_NUM)
-		error(-1);
-	printf("	mov rax, %d\n", Tokens[0].val);
+	// 抽象構文木を下りながらコード生成
+	gen(node);
 	
-	int i = 1;
-	while (Tokens[i].ty != TK_EOF) {
-		if (Tokens[i].ty == '+') {
-			i++;
-			if (Tokens[i].ty != TK_NUM)
-				error(i);
-			printf("	add rax, %d\n", Tokens[i].val);
-			i++;
-			continue;
-		}
-		if (Tokens[i].ty == '-') {
-			i++;
-			if (Tokens[i].ty != TK_NUM)
-				error(i);
-			printf("	sub rax, %d\n", Tokens[i].val);
-			i++;
-			continue;
-		}
-		error(i);
-	}
+	printf("	pop rax\n");
 	printf("	ret\n");
 	return 0;
 }
@@ -94,7 +89,7 @@ int i = 0;
 			continue;
 		}
 		
-		if (*p == '+' || *p == '-') {
+		if (*p == '+' || *p == '-' || *p == '*') {
 			Tokens[i].ty = *p;
 			Tokens[i].input = p;
 			i++;
@@ -118,10 +113,115 @@ int i = 0;
 }
 
 
-void error(int i)
+void error(char *s, char *i)
 {
-	fprintf(stderr, "予期せぬトークンです： %s\n", Tokens[i].input);
+	printf("%s %c\n", s, *i);
 	exit(1);
+}
+
+
+Node *new_node(int op, Node *lhs, Node *rhs)
+{
+Node *node = malloc(sizeof(Node));
+node->ty = op;
+node->lhs = lhs;
+node->rhs = rhs;
+return node;
+}
+
+
+Node *new_node_num(int val)
+{
+Node *node = malloc(sizeof(Node));
+node->ty = ND_NUM;
+node->val = val;
+return node;
+}
+
+
+Node *expr()
+{
+	Node *lhs = mul();
+	
+	if (Tokens[Pos].ty == TK_EOF)
+		return lhs;
+	
+	if (Tokens[Pos].ty == '+') {
+		Pos++;
+		return new_node('+', lhs, expr());
+	}
+	if (Tokens[Pos].ty == '-') {
+		Pos++;
+		return new_node('-', lhs, expr());
+	}
+	error("(1)想定しないトークンです:", Tokens[Pos].input);
+}
+
+
+Node *mul()
+{
+Node *lhs = term();
+
+
+	if (Tokens[Pos].ty == '+' || Tokens[Pos].ty == '-')			// add hara
+		return lhs;						// add hara
+	if (Tokens[Pos].ty == TK_EOF)
+		return lhs;
+	if (Tokens[Pos].ty == '*') {
+		Pos++;
+		return new_node('*', lhs, mul());
+	}
+/*
+	if (Tokens[pos].ty == '/') {
+		pos++;
+		return new_node('/', lhs, mul());
+	}
+*/
+	error("(2)想定しないトークンです:", Tokens[Pos].input);
+}
+
+Node *term()
+{
+	if (Tokens[Pos].ty == TK_NUM)
+		return new_node_num(Tokens[Pos++].val);
+	if (Tokens[Pos].ty == '(') {
+		Pos++;
+		Node *node = expr();
+		if (Tokens[Pos].ty != ')') {
+			error("開きカッコに対応する閉じカッコがありません:", Tokens[Pos].input);
+			Pos++;
+			return node;
+		}
+	}
+	error("数値でも開きカッコでもないトークンです:", Tokens[Pos].input);
+}
+
+
+void gen(Node *node)
+{
+	if (node->ty == ND_NUM) {		// nodeは１つではない
+		printf("	push %d\n", node->val);
+		return;
+	}
+	
+	gen(node->lhs);
+	gen(node->rhs);
+	
+	printf("	pop rdi\n");
+	printf("	pop rax\n");
+	
+	switch (node->ty) {
+	case '+':
+		printf("	add rax, rdi\n");
+		break;
+	case '-':
+		printf("	sub rax, rdi\n");
+		break;
+	case '*':
+		printf("	mul rdi\n");
+		break;
+	}
+	printf("	push rax\n");
 }
 
 
